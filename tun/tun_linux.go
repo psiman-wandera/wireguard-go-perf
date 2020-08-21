@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
-	"math/rand"
 
 	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
@@ -47,7 +46,8 @@ type NativeTun struct {
 }
 
 func (tun *NativeTun) File() *os.File {
-	return tun.tunFiles[rand.Intn(len(tun.tunFiles))]
+	return tun.tunFiles[0]
+	//return tun.tunFiles[rand.Intn(len(tun.tunFiles))]
 }
 
 func (tun *NativeTun) routineHackListener() {
@@ -395,6 +395,16 @@ func (tun *NativeTun) Close() error {
 }
 
 func CreateTUN(name string, mtu int) (Device, error) {
+
+	var ifr [ifReqSize]byte
+	var flags uint16 = unix.IFF_TUN | unix.IFF_MULTI_QUEUE // | unix.IFF_NO_PI (disabled for TUN status hack)
+	nameBytes := []byte(name)
+	if len(nameBytes) >= unix.IFNAMSIZ {
+		return nil, errors.New("interface name too long")
+	}
+	copy(ifr[:], nameBytes)
+	*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) = flags
+
 	fds := make([]*os.File,0)
 	for range [2]int{} {
 		nfd, err := unix.Open(cloneDevicePath, os.O_RDWR, 0)
@@ -404,15 +414,6 @@ func CreateTUN(name string, mtu int) (Device, error) {
 			}
 			return nil, err
 		}
-
-		var ifr [ifReqSize]byte
-		var flags uint16 = unix.IFF_TUN | unix.IFF_MULTI_QUEUE // | unix.IFF_NO_PI (disabled for TUN status hack)
-		nameBytes := []byte(name)
-		if len(nameBytes) >= unix.IFNAMSIZ {
-			return nil, errors.New("interface name too long")
-		}
-		copy(ifr[:], nameBytes)
-		*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) = flags
 
 		_, _, errno := unix.Syscall(
 			unix.SYS_IOCTL,

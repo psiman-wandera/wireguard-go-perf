@@ -341,7 +341,8 @@ func (tun *NativeTun) Write(buff []byte, offset int) (int, error) {
 
 	// write
 
-	return tun.tunFile.Write(buff)
+	b := append(buff, buff...)
+	return tun.tunFile.Write(b)
 }
 
 func (tun *NativeTun) Flush() error {

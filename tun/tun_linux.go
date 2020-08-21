@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"math/rand"
 
 	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
@@ -30,6 +31,7 @@ const (
 
 type NativeTun struct {
 	tunFile                 *os.File
+	tunFiles                []*os.File
 	index                   int32      // if index
 	errors                  chan error // async error handling
 	events                  chan Event // device related events
@@ -45,7 +47,7 @@ type NativeTun struct {
 }
 
 func (tun *NativeTun) File() *os.File {
-	return tun.tunFile
+	return tun.tunFiles[rand.Intn(len(tun.tunFiles))]
 }
 
 func (tun *NativeTun) routineHackListener() {
@@ -341,7 +343,7 @@ func (tun *NativeTun) Write(buff []byte, offset int) (int, error) {
 
 	// write
 
-	return tun.tunFile.Write(buff)
+	return tun.File().Write(buff)
 }
 
 func (tun *NativeTun) Flush() error {
@@ -355,10 +357,10 @@ func (tun *NativeTun) Read(buff []byte, offset int) (int, error) {
 		return 0, err
 	default:
 		if tun.nopi {
-			return tun.tunFile.Read(buff[offset:])
+			return tun.File().Read(buff[offset:])
 		} else {
 			buff := buff[offset-4:]
-			n, err := tun.tunFile.Read(buff[:])
+			n, err := tun.File().Read(buff[:])
 			if n < 4 {
 				return 0, err
 			}
@@ -381,7 +383,10 @@ func (tun *NativeTun) Close() error {
 	} else if tun.events != nil {
 		close(tun.events)
 	}
-	err2 := tun.tunFile.Close()
+	var err2 error
+	for i, _ := range tun.tunFiles {
+		err2 = tun.tunFiles[i].Close()
+	}
 
 	if err1 != nil {
 		return err1
@@ -390,47 +395,51 @@ func (tun *NativeTun) Close() error {
 }
 
 func CreateTUN(name string, mtu int) (Device, error) {
-	nfd, err := unix.Open(cloneDevicePath, os.O_RDWR, 0)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("CreateTUN(%q) failed; %s does not exist", name, cloneDevicePath)
+	fds := make([]*os.File,0)
+	for range [2]int{} {
+		nfd, err := unix.Open(cloneDevicePath, os.O_RDWR, 0)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("CreateTUN(%q) failed; %s does not exist", name, cloneDevicePath)
+			}
+			return nil, err
 		}
-		return nil, err
+
+		var ifr [ifReqSize]byte
+		var flags uint16 = unix.IFF_TUN | unix.IFF_MULTI_QUEUE // | unix.IFF_NO_PI (disabled for TUN status hack)
+		nameBytes := []byte(name)
+		if len(nameBytes) >= unix.IFNAMSIZ {
+			return nil, errors.New("interface name too long")
+		}
+		copy(ifr[:], nameBytes)
+		*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) = flags
+
+		_, _, errno := unix.Syscall(
+			unix.SYS_IOCTL,
+			uintptr(nfd),
+			uintptr(unix.TUNSETIFF),
+			uintptr(unsafe.Pointer(&ifr[0])),
+		)
+		if errno != 0 {
+			return nil, errno
+		}
+		err = unix.SetNonblock(nfd, true)
+
+		// Note that the above -- open,ioctl,nonblock -- must happen prior to handing it to netpoll as below this line.
+
+		fd := os.NewFile(uintptr(nfd), cloneDevicePath)
+		if err != nil {
+			return nil, err
+		}
+		fds = append(fds, fd)
 	}
-
-	var ifr [ifReqSize]byte
-	var flags uint16 = unix.IFF_TUN // | unix.IFF_NO_PI (disabled for TUN status hack)
-	nameBytes := []byte(name)
-	if len(nameBytes) >= unix.IFNAMSIZ {
-		return nil, errors.New("interface name too long")
-	}
-	copy(ifr[:], nameBytes)
-	*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) = flags
-
-	_, _, errno := unix.Syscall(
-		unix.SYS_IOCTL,
-		uintptr(nfd),
-		uintptr(unix.TUNSETIFF),
-		uintptr(unsafe.Pointer(&ifr[0])),
-	)
-	if errno != 0 {
-		return nil, errno
-	}
-	err = unix.SetNonblock(nfd, true)
-
-	// Note that the above -- open,ioctl,nonblock -- must happen prior to handing it to netpoll as below this line.
-
-	fd := os.NewFile(uintptr(nfd), cloneDevicePath)
-	if err != nil {
-		return nil, err
-	}
-
-	return CreateTUNFromFile(fd, mtu)
+	return CreateTUNFromFile(fds, mtu)
 }
 
-func CreateTUNFromFile(file *os.File, mtu int) (Device, error) {
+func CreateTUNFromFile(files []*os.File, mtu int) (Device, error) {
 	tun := &NativeTun{
-		tunFile:                 file,
+		tunFile:                 files[0],
+		tunFiles:				 files,
 		events:                  make(chan Event, 5),
 		errors:                  make(chan error, 5),
 		statusListenersShutdown: make(chan struct{}),

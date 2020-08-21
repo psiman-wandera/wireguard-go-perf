@@ -109,7 +109,8 @@ func main() {
 
 	// open TUN device (or use supplied fd)
 
-	tun, err := func() (tun.Device, error) {
+	tun, err := tun.CreateTUN(interfaceName, device.DefaultMTU)
+	/*tun, err := func() (tun.Device, error) {
 		tunFdStr := os.Getenv(ENV_WG_TUN_FD)
 		if tunFdStr == "" {
 			return tun.CreateTUN(interfaceName, device.DefaultMTU)
@@ -129,7 +130,7 @@ func main() {
 
 		file := os.NewFile(uintptr(fd), "")
 		return tun.CreateTUNFromFile(file, device.DefaultMTU)
-	}()
+	}()*/
 
 	if err == nil {
 		realInterfaceName, err2 := tun.Name()

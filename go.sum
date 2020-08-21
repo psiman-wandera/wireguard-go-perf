@@ -1,3 +1,7 @@
+github.com/laura-zelenku/golang-sys v0.0.0-20200821132159-dca223aa78d1 h1:jX5+sN8s8iYgP3uzdwYEI+uR844Q1MCtZOP5uB8+jhA=
+github.com/laura-zelenku/golang-sys v0.0.0-20200821132159-dca223aa78d1/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+github.com/laura-zelenku/golang-sys v0.0.0-20200821135539-843af3316c03/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+github.com/laura-zelenku/golang-sys v0.0.0-20200821140026-115c535910bd/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79 h1:IaQbIIB2X/Mp/DKctl6ROxz1KyMlKp4uyvL6+kQ7C88=
 golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=

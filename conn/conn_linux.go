@@ -60,9 +60,10 @@ func (endpoint *NativeEndpoint) dst6() *unix.SockaddrInet6 {
 }
 
 type nativeBind struct {
-	sock4    int
-	sock6    int
-	lastMark uint32
+	sock4        int
+	sock6        int
+	lastMark     uint32
+	outboundMsgs []*unix.Msghdr
 }
 
 var _ Endpoint = (*NativeEndpoint)(nil)

@@ -40,6 +40,7 @@ type Bind interface {
 
 	// Send writes a packet b to address ep.
 	Send(b []byte, ep Endpoint) error
+	SendBuffered(b []byte, ep Endpoint) error
 
 	// Close closes the Bind connection.
 	Close() error

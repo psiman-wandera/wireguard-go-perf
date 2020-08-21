@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"math/rand"
 
 	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
@@ -46,8 +47,7 @@ type NativeTun struct {
 }
 
 func (tun *NativeTun) File() *os.File {
-	return tun.tunFiles[0]
-	//return tun.tunFiles[rand.Intn(len(tun.tunFiles))]
+	return tun.tunFiles[rand.Intn(len(tun.tunFiles))]
 }
 
 func (tun *NativeTun) routineHackListener() {
@@ -56,33 +56,35 @@ func (tun *NativeTun) routineHackListener() {
 	 * If you are reading this and know a better method, please get in touch.
 	 */
 	for {
-		sysconn, err := tun.tunFile.SyscallConn()
-		if err != nil {
-			return
-		}
-		err2 := sysconn.Control(func(fd uintptr) {
-			_, err = unix.Write(int(fd), nil)
-		})
-		if err2 != nil {
-			return
-		}
-		switch err {
-		case unix.EINVAL:
-			// If the tunnel is up, it reports that write() is
-			// allowed but we provided invalid data.
-			tun.events <- EventUp
-		case unix.EIO:
-			// If the tunnel is down, it reports that no I/O
-			// is possible, without checking our provided data.
-			tun.events <- EventDown
-		default:
-			return
-		}
-		select {
-		case <-time.After(time.Second):
-			// nothing
-		case <-tun.statusListenersShutdown:
-			return
+		for i, _ := range tun.tunFiles {
+			sysconn, err := tun.tunFiles[i].SyscallConn()
+			if err != nil {
+				return
+			}
+			err2 := sysconn.Control(func(fd uintptr) {
+				_, err = unix.Write(int(fd), nil)
+			})
+			if err2 != nil {
+				return
+			}
+			switch err {
+			case unix.EINVAL:
+				// If the tunnel is up, it reports that write() is
+				// allowed but we provided invalid data.
+				tun.events <- EventUp
+			case unix.EIO:
+				// If the tunnel is down, it reports that no I/O
+				// is possible, without checking our provided data.
+				tun.events <- EventDown
+			default:
+				return
+			}
+			select {
+			case <-time.After(time.Second):
+				// nothing
+			case <-tun.statusListenersShutdown:
+				return
+			}
 		}
 	}
 }

@@ -38,6 +38,8 @@ type NativeTun struct {
 	netlinkCancel           *rwcancel.RWCancel
 	hackListenerClosed      sync.Mutex
 	statusListenersShutdown chan struct{}
+	writeBuf                []byte
+	writeBufLock            sync.RWMutex
 
 	nameOnce  sync.Once // guards calling initNameCache, which sets following fields
 	nameCache string    // name of interface
@@ -341,13 +343,21 @@ func (tun *NativeTun) Write(buff []byte, offset int) (int, error) {
 
 	// write
 
-	b := append(buff, buff...)
-	return tun.tunFile.Write(b)
+	tun.writeBufLock.Lock()
+	defer tun.writeBufLock.Unlock()
+	tun.writeBuf = append(tun.writeBuf, buff...)
+
+	return len(buff), nil
 }
 
 func (tun *NativeTun) Flush() error {
-	// TODO: can flushing be implemented by buffering and using sendmmsg?
-	return nil
+	tun.writeBufLock.Lock()
+	defer tun.writeBufLock.Unlock()
+
+	_, err := tun.tunFile.Write(tun.writeBuf)
+	tun.writeBuf = []byte{}
+
+	return err
 }
 
 func (tun *NativeTun) Read(buff []byte, offset int) (int, error) {

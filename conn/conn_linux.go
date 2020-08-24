@@ -344,6 +344,15 @@ func create4(port uint16) (int, uint16, error) {
 			return err
 		}
 
+		if err := unix.SetsockoptInt(
+			fd,
+			unix.IPPROTO_UDP,
+			0x67, // UDP_SEGMENT - Set GSO segmentation size
+			8921,
+		); err != nil {
+			return err
+		}
+
 		return unix.Bind(fd, &addr)
 	}(); err != nil {
 		unix.Close(fd)
@@ -403,6 +412,15 @@ func create6(port uint16) (int, uint16, error) {
 			unix.IPPROTO_IPV6,
 			unix.IPV6_V6ONLY,
 			1,
+		); err != nil {
+			return err
+		}
+
+		if err := unix.SetsockoptInt(
+			fd,
+			unix.IPPROTO_UDP,
+			0x67, // UDP_SEGMENT - Set GSO segmentation size
+			8921,
 		); err != nil {
 			return err
 		}

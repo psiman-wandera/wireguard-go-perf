@@ -160,7 +160,7 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
 
-	err = peer.SendBuffer(packet)
+	err = peer.Send(packet)
 	if err != nil {
 		peer.device.log.Error.Println(peer, "- Failed to send handshake initiation", err)
 	}
@@ -198,7 +198,7 @@ func (peer *Peer) SendHandshakeResponse() error {
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
 
-	err = peer.SendBuffer(packet)
+	err = peer.Send(packet)
 	if err != nil {
 		peer.device.log.Error.Println(peer, "- Failed to send handshake response", err)
 	}

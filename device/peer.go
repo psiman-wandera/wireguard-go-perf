@@ -164,6 +164,29 @@ func (peer *Peer) SendBuffer(buffer []byte) error {
 	return err
 }
 
+func (peer *Peer) Send(buffer []byte) error {
+	peer.device.net.RLock()
+	defer peer.device.net.RUnlock()
+
+	if peer.device.net.bind == nil {
+		return errors.New("no bind")
+	}
+
+	peer.RLock()
+	defer peer.RUnlock()
+
+	if peer.endpoint == nil {
+		return errors.New("no known endpoint for peer")
+	}
+
+	err := peer.device.net.bind.Send(buffer, peer.endpoint)
+	if err == nil {
+		atomic.AddUint64(&peer.stats.txBytes, uint64(len(buffer)))
+	}
+
+	return err
+}
+
 func (peer *Peer) String() string {
 	base64Key := base64.StdEncoding.EncodeToString(peer.handshake.remoteStatic[:])
 	abbreviatedKey := "invalid"

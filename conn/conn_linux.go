@@ -81,7 +81,7 @@ func CreateEndpoint(s string) (Endpoint, error) {
 	}
 
 	// N+1 segments buffer
-	end.buff = bytes.NewBuffer(make([]byte, gsoSegmentSize*(gsoSegments+1)))
+	end.buff = bytes.NewBuffer(make([]byte, 0, gsoSegmentSize*(gsoSegments+1)))
 
 	ipv4 := addr.IP.To4()
 	if ipv4 != nil {
@@ -206,7 +206,7 @@ func (bind *nativeBind) ReceiveIPv6(buff []byte) (int, Endpoint, error) {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
 	// N+1 segments buffer
-	end.buff = bytes.NewBuffer(make([]byte, gsoSegmentSize*(gsoSegments+1)))
+	end.buff = bytes.NewBuffer(make([]byte, 0, gsoSegmentSize*(gsoSegments+1)))
 	n, err := receive6(
 		bind.sock6,
 		buff,
@@ -221,7 +221,7 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
 	// N+1 segments buffer
-	end.buff = bytes.NewBuffer(make([]byte, gsoSegmentSize*(gsoSegments+1)))
+	end.buff = bytes.NewBuffer(make([]byte, 0, gsoSegmentSize*(gsoSegments+1)))
 	n, err := receive4(
 		bind.sock4,
 		buff,

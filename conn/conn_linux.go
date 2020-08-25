@@ -543,7 +543,7 @@ func send6(sock int, end *NativeEndpoint, buff []byte) error {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet6Pktinfo{}
 		end.Lock()
-		_, err = unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
+		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
 		end.Unlock()
 	}
 

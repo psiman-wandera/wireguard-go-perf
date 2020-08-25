@@ -10,6 +10,7 @@ package conn
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -21,7 +22,7 @@ import (
 
 const (
 	FD_ERR         = -1
-	gsoSegmentSize = 8921
+	gsoSegmentSize = 100
 	gsoSegments    = 4 // must be < 64
 	gsoBufferSize  = gsoSegments * gsoSegmentSize
 )
@@ -246,6 +247,7 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 }
 
 func (bind *nativeBind) SendBuffered(buff []byte, end Endpoint) error {
+	fmt.Println("SendBuffered - buff len:", len(buff))
 	nend := end.(*NativeEndpoint)
 	_, err := nend.buff.Write(buff)
 	if err != nil {
@@ -261,6 +263,7 @@ func (bind *nativeBind) SendBuffered(buff []byte, end Endpoint) error {
 
 func (bind *nativeBind) Flush(end Endpoint) error {
 	nend := end.(*NativeEndpoint)
+	fmt.Println("Flush - buff len", len(nend.buff.Bytes()))
 	defer nend.buff.Reset()
 	return bind.Send(nend.buff.Bytes(), end)
 }
@@ -376,15 +379,6 @@ func create4(port uint16) (int, uint16, error) {
 			return err
 		}
 
-		if err := unix.SetsockoptInt(
-			fd,
-			unix.IPPROTO_UDP,
-			0x67, // UDP_SEGMENT - Set GSO segmentation size
-			gsoSegmentSize,
-		); err != nil {
-			return err
-		}
-
 		return unix.Bind(fd, &addr)
 	}(); err != nil {
 		unix.Close(fd)
@@ -447,15 +441,6 @@ func create6(port uint16) (int, uint16, error) {
 			return err
 		}
 
-		if err := unix.SetsockoptInt(
-			fd,
-			unix.IPPROTO_UDP,
-			0x67, // UDP_SEGMENT - Set GSO segmentation size
-			gsoSegmentSize,
-		); err != nil {
-			return err
-		}
-
 		return unix.Bind(fd, &addr)
 
 	}(); err != nil {
@@ -474,8 +459,8 @@ func create6(port uint16) (int, uint16, error) {
 func send4(sock int, end *NativeEndpoint, buff []byte) error {
 	// construct message header
 	cmsg := struct {
-		cmsghdr unix.Cmsghdr
-		pktinfo unix.Inet4Pktinfo
+		cmsghdr    unix.Cmsghdr
+		pktinfo    unix.Inet4Pktinfo
 	}{
 		unix.Cmsghdr{
 			Level: unix.IPPROTO_IP,
@@ -487,9 +472,24 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 			Ifindex:  end.src4().Ifindex,
 		},
 	}
+	cmsg2 := struct {
+		cmsghdrGSO unix.Cmsghdr
+		gsoData    uint16
+	}{
+		unix.Cmsghdr{
+			Level: unix.IPPROTO_UDP,
+			Type:  0x67,
+			Len:   2 + unix.SizeofCmsghdr,
+		},
+		uint16(len(buff)),
+	}
+
+	fmt.Println("send4 - buff len", len(buff))
 
 	end.Lock()
-	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
+	_, err := unix.SendmsgN(sock, buff,
+		append((*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:],(*[unsafe.Sizeof(cmsg2)]byte)(unsafe.Pointer(&cmsg2))[:]...),
+		end.dst4(), 0)
 	end.Unlock()
 
 	if err == nil {
@@ -501,7 +501,9 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet4Pktinfo{}
 		end.Lock()
-		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
+		_, err = unix.SendmsgN(sock, buff,
+			append((*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:],(*[unsafe.Sizeof(cmsg2)]byte)(unsafe.Pointer(&cmsg2))[:]...),
+			end.dst4(), 0)
 		end.Unlock()
 	}
 
@@ -525,6 +527,8 @@ func send6(sock int, end *NativeEndpoint, buff []byte) error {
 			Ifindex: end.dst6().ZoneId,
 		},
 	}
+
+	fmt.Println("send6 - buff len", len(buff))
 
 	if cmsg.pktinfo.Addr == [16]byte{} {
 		cmsg.pktinfo.Ifindex = 0

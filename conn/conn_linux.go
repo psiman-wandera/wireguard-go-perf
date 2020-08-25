@@ -79,7 +79,9 @@ func CreateEndpoint(s string) (Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	end.buff = bytes.NewBuffer(make([]byte, gsoBufferSize))
+
+	// N+1 segments buffer
+	end.buff = bytes.NewBuffer(make([]byte, gsoSegmentSize*(gsoSegments+1)))
 
 	ipv4 := addr.IP.To4()
 	if ipv4 != nil {

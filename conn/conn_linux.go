@@ -22,7 +22,7 @@ import (
 const (
 	FD_ERR         = -1
 	gsoSegmentSize = 8921
-	gsoSegments    = 32 // must be < 64
+	gsoSegments    = 4 // must be < 64
 	gsoBufferSize  = gsoSegments * gsoSegmentSize
 )
 
@@ -205,6 +205,8 @@ func (bind *nativeBind) ReceiveIPv6(buff []byte) (int, Endpoint, error) {
 	if bind.sock6 == -1 {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
+	// N+1 segments buffer
+	end.buff = bytes.NewBuffer(make([]byte, gsoSegmentSize*(gsoSegments+1)))
 	n, err := receive6(
 		bind.sock6,
 		buff,
@@ -218,6 +220,8 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 	if bind.sock4 == -1 {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
+	// N+1 segments buffer
+	end.buff = bytes.NewBuffer(make([]byte, gsoSegmentSize*(gsoSegments+1)))
 	n, err := receive4(
 		bind.sock4,
 		buff,
@@ -227,6 +231,21 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 }
 
 func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
+	nend := end.(*NativeEndpoint)
+	if !nend.isV6 {
+		if bind.sock4 == -1 {
+			return syscall.EAFNOSUPPORT
+		}
+		return send4(bind.sock4, nend, buff)
+	} else {
+		if bind.sock6 == -1 {
+			return syscall.EAFNOSUPPORT
+		}
+		return send6(bind.sock6, nend, buff)
+	}
+}
+
+func (bind *nativeBind) SendBuffered(buff []byte, end Endpoint) error {
 	nend := end.(*NativeEndpoint)
 	_, err := nend.buff.Write(buff)
 	if err != nil {
@@ -242,17 +261,8 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 
 func (bind *nativeBind) Flush(end Endpoint) error {
 	nend := end.(*NativeEndpoint)
-	if !nend.isV6 {
-		if bind.sock4 == -1 {
-			return syscall.EAFNOSUPPORT
-		}
-		return send4(bind.sock4, nend)
-	} else {
-		if bind.sock6 == -1 {
-			return syscall.EAFNOSUPPORT
-		}
-		return send6(bind.sock6, nend)
-	}
+	defer nend.buff.Reset()
+	return bind.Send(nend.buff.Bytes(), end)
 }
 
 func (end *NativeEndpoint) SrcIP() net.IP {
@@ -390,7 +400,6 @@ func create4(port uint16) (int, uint16, error) {
 }
 
 func create6(port uint16) (int, uint16, error) {
-
 	// create socket
 
 	fd, err := unix.Socket(
@@ -462,10 +471,7 @@ func create6(port uint16) (int, uint16, error) {
 	return fd, uint16(addr.Port), err
 }
 
-func send4(sock int, end *NativeEndpoint) error {
-	// clear buffer after write
-	defer end.buff.Reset()
-
+func send4(sock int, end *NativeEndpoint, buff []byte) error {
 	// construct message header
 	cmsg := struct {
 		cmsghdr unix.Cmsghdr
@@ -483,7 +489,7 @@ func send4(sock int, end *NativeEndpoint) error {
 	}
 
 	end.Lock()
-	_, err := unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
+	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 	end.Unlock()
 
 	if err == nil {
@@ -495,17 +501,14 @@ func send4(sock int, end *NativeEndpoint) error {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet4Pktinfo{}
 		end.Lock()
-		_, err = unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
+		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 		end.Unlock()
 	}
 
 	return err
 }
 
-func send6(sock int, end *NativeEndpoint) error {
-	// clear buffer after write
-	defer end.buff.Reset()
-
+func send6(sock int, end *NativeEndpoint, buff []byte) error {
 	// construct message header
 
 	cmsg := struct {
@@ -528,7 +531,7 @@ func send6(sock int, end *NativeEndpoint) error {
 	}
 
 	end.Lock()
-	_, err := unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
+	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
 	end.Unlock()
 
 	if err == nil {

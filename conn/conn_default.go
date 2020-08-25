@@ -175,6 +175,10 @@ func (bind *nativeBind) Send(buff []byte, endpoint Endpoint) error {
 	return err
 }
 
+func (bind *nativeBind) SendBuffered(b []byte, ep Endpoint) error {
+	return bind.Send(b, ep)
+}
+
 func (bind *nativeBind) Flush(end Endpoint) error {
 	return nil
 }

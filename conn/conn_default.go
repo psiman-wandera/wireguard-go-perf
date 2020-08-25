@@ -174,3 +174,7 @@ func (bind *nativeBind) Send(buff []byte, endpoint Endpoint) error {
 	}
 	return err
 }
+
+func (bind *nativeBind) Flush(end Endpoint) error {
+	return nil
+}

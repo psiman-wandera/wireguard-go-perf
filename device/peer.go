@@ -153,6 +153,14 @@ func (peer *Peer) SendBuffer(buffer []byte) error {
 	if err == nil {
 		atomic.AddUint64(&peer.stats.txBytes, uint64(len(buffer)))
 	}
+
+	if len(peer.queue.outbound) == 0 {
+		err := peer.device.net.bind.Flush(peer.endpoint)
+		if err != nil {
+			return err
+		}
+	}
+
 	return err
 }
 

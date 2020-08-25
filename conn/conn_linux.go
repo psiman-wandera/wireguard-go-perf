@@ -8,6 +8,7 @@
 package conn
 
 import (
+	"bytes"
 	"errors"
 	"net"
 	"strconv"
@@ -19,7 +20,10 @@ import (
 )
 
 const (
-	FD_ERR = -1
+	FD_ERR         = -1
+	gsoSegmentSize = 8921
+	gsoSegments    = 32 // must be < 64
+	gsoBufferSize  = gsoSegments * gsoSegmentSize
 )
 
 type IPv4Source struct {
@@ -37,6 +41,7 @@ type NativeEndpoint struct {
 	dst  [unsafe.Sizeof(unix.SockaddrInet6{})]byte
 	src  [unsafe.Sizeof(IPv6Source{})]byte
 	isV6 bool
+	buff *bytes.Buffer
 }
 
 func (endpoint *NativeEndpoint) Src4() *IPv4Source         { return endpoint.src4() }
@@ -74,6 +79,7 @@ func CreateEndpoint(s string) (Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	end.buff = bytes.NewBuffer(make([]byte, gsoBufferSize))
 
 	ipv4 := addr.IP.To4()
 	if ipv4 != nil {
@@ -220,16 +226,30 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 
 func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 	nend := end.(*NativeEndpoint)
+	_, err := nend.buff.Write(buff)
+	if err != nil {
+		return err
+	}
+
+	if nend.buff.Len() >= gsoBufferSize {
+		return bind.Flush(end)
+	}
+
+	return nil
+}
+
+func (bind *nativeBind) Flush(end Endpoint) error {
+	nend := end.(*NativeEndpoint)
 	if !nend.isV6 {
 		if bind.sock4 == -1 {
 			return syscall.EAFNOSUPPORT
 		}
-		return send4(bind.sock4, nend, buff)
+		return send4(bind.sock4, nend)
 	} else {
 		if bind.sock6 == -1 {
 			return syscall.EAFNOSUPPORT
 		}
-		return send6(bind.sock6, nend, buff)
+		return send6(bind.sock6, nend)
 	}
 }
 
@@ -348,7 +368,7 @@ func create4(port uint16) (int, uint16, error) {
 			fd,
 			unix.IPPROTO_UDP,
 			0x67, // UDP_SEGMENT - Set GSO segmentation size
-			8921,
+			gsoSegmentSize,
 		); err != nil {
 			return err
 		}
@@ -420,7 +440,7 @@ func create6(port uint16) (int, uint16, error) {
 			fd,
 			unix.IPPROTO_UDP,
 			0x67, // UDP_SEGMENT - Set GSO segmentation size
-			8921,
+			gsoSegmentSize,
 		); err != nil {
 			return err
 		}
@@ -440,10 +460,11 @@ func create6(port uint16) (int, uint16, error) {
 	return fd, uint16(addr.Port), err
 }
 
-func send4(sock int, end *NativeEndpoint, buff []byte) error {
+func send4(sock int, end *NativeEndpoint) error {
+	// clear buffer after write
+	defer end.buff.Reset()
 
 	// construct message header
-
 	cmsg := struct {
 		cmsghdr unix.Cmsghdr
 		pktinfo unix.Inet4Pktinfo
@@ -460,7 +481,7 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 	}
 
 	end.Lock()
-	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
+	_, err := unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 	end.Unlock()
 
 	if err == nil {
@@ -468,19 +489,20 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 	}
 
 	// clear src and retry
-
 	if err == unix.EINVAL {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet4Pktinfo{}
 		end.Lock()
-		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
+		_, err = unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 		end.Unlock()
 	}
 
 	return err
 }
 
-func send6(sock int, end *NativeEndpoint, buff []byte) error {
+func send6(sock int, end *NativeEndpoint) error {
+	// clear buffer after write
+	defer end.buff.Reset()
 
 	// construct message header
 
@@ -504,7 +526,7 @@ func send6(sock int, end *NativeEndpoint, buff []byte) error {
 	}
 
 	end.Lock()
-	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
+	_, err := unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
 	end.Unlock()
 
 	if err == nil {
@@ -512,12 +534,11 @@ func send6(sock int, end *NativeEndpoint, buff []byte) error {
 	}
 
 	// clear src and retry
-
 	if err == unix.EINVAL {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet6Pktinfo{}
 		end.Lock()
-		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
+		_, err = unix.SendmsgN(sock, end.buff.Bytes(), (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
 		end.Unlock()
 	}
 

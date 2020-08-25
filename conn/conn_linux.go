@@ -22,9 +22,7 @@ import (
 
 const (
 	FD_ERR         = -1
-	gsoSegmentSize = 100
-	gsoSegments    = 4 // must be < 64
-	gsoBufferSize  = gsoSegments * gsoSegmentSize
+	gsoBufferSize  = 1452
 )
 
 type IPv4Source struct {
@@ -82,7 +80,7 @@ func CreateEndpoint(s string) (Endpoint, error) {
 	}
 
 	// N+1 segments buffer
-	end.buff = bytes.NewBuffer(make([]byte, 0, gsoSegmentSize*(gsoSegments+1)))
+	end.buff = bytes.NewBuffer(make([]byte, 0, gsoBufferSize))
 
 	ipv4 := addr.IP.To4()
 	if ipv4 != nil {
@@ -207,7 +205,7 @@ func (bind *nativeBind) ReceiveIPv6(buff []byte) (int, Endpoint, error) {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
 	// N+1 segments buffer
-	end.buff = bytes.NewBuffer(make([]byte, 0, gsoSegmentSize*(gsoSegments+1)))
+	end.buff = bytes.NewBuffer(make([]byte, 0, gsoBufferSize))
 	n, err := receive6(
 		bind.sock6,
 		buff,
@@ -222,7 +220,7 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
 	// N+1 segments buffer
-	end.buff = bytes.NewBuffer(make([]byte, 0, gsoSegmentSize*(gsoSegments+1)))
+	end.buff = bytes.NewBuffer(make([]byte, 0, gsoBufferSize))
 	n, err := receive4(
 		bind.sock4,
 		buff,
@@ -249,13 +247,17 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 func (bind *nativeBind) SendBuffered(buff []byte, end Endpoint) error {
 	fmt.Println("SendBuffered - buff len:", len(buff))
 	nend := end.(*NativeEndpoint)
+
+	if nend.buff.Len() + len(buff) >= gsoBufferSize {
+		err := bind.Flush(end)
+		if err != nil {
+			return err
+		}
+	}
+
 	_, err := nend.buff.Write(buff)
 	if err != nil {
 		return err
-	}
-
-	if nend.buff.Len() >= gsoBufferSize {
-		return bind.Flush(end)
 	}
 
 	return nil

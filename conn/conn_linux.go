@@ -402,6 +402,24 @@ func create4(port uint16) (int, uint16, error) {
 			return err
 		}
 
+		if err := unix.SetsockoptInt(
+			fd,
+			unix.SOL_SOCKET,
+			unix.SO_SNDBUF,
+			16 * 1024 * 1024,
+		); err != nil {
+			return err
+		}
+
+		if err := unix.SetsockoptInt(
+			fd,
+			unix.SOL_SOCKET,
+			unix.SO_RCVBUF,
+			16 * 1024 * 1024,
+		); err != nil {
+			return err
+		}
+
 		return unix.Bind(fd, &addr)
 	}(); err != nil {
 		unix.Close(fd)
@@ -460,6 +478,24 @@ func create6(port uint16) (int, uint16, error) {
 			unix.IPPROTO_IPV6,
 			unix.IPV6_V6ONLY,
 			1,
+		); err != nil {
+			return err
+		}
+
+		if err := unix.SetsockoptInt(
+			fd,
+			unix.SOL_SOCKET,
+			unix.SO_SNDBUF,
+			16 * 1024 * 1024,
+		); err != nil {
+			return err
+		}
+
+		if err := unix.SetsockoptInt(
+			fd,
+			unix.SOL_SOCKET,
+			unix.SO_RCVBUF,
+			16 * 1024 * 1024,
 		); err != nil {
 			return err
 		}

@@ -18,7 +18,7 @@ func buffersWithCap(cap int) buffers {
 		len: 0,
 	}
 	for i := 0; i < cap; i++ {
-		b.buffs = append(b.buffs, bytes.NewBuffer(make([]byte, 0)))
+		b.buffs = append(b.buffs, bytes.NewBuffer(make([]byte, 0, gsoSegmentSize)))
 	}
 	return b
 }

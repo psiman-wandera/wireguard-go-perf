@@ -8,7 +8,6 @@
 package conn
 
 import (
-	"bytes"
 	"errors"
 	"net"
 	"strconv"
@@ -23,6 +22,7 @@ const (
 	FD_ERR         = -1
 	gsoSegments    = 32
 	gsoSegmentSize = 1452
+	buffSize = 2 * 1024 * 1024
 )
 
 type IPv4Source struct {
@@ -32,16 +32,14 @@ type IPv4Source struct {
 
 type IPv6Source struct {
 	src [16]byte
-	// ifindex belongs in dst.ZoneId
+	//ifindex belongs in dst.ZoneId
 }
 
 type NativeEndpoint struct {
 	sync.Mutex
-	dst   [unsafe.Sizeof(unix.SockaddrInet6{})]byte
-	src   [unsafe.Sizeof(IPv6Source{})]byte
-	isV6  bool
-	buffs buffers
-	buff  *bytes.Buffer
+	dst  [unsafe.Sizeof(unix.SockaddrInet6{})]byte
+	src  [unsafe.Sizeof(IPv6Source{})]byte
+	isV6 bool
 }
 
 func (endpoint *NativeEndpoint) Src4() *IPv4Source         { return endpoint.src4() }
@@ -79,10 +77,6 @@ func CreateEndpoint(s string) (Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Segments buffers
-	end.buffs = buffersWithCap(gsoSegments)
-	end.buff = bytes.NewBuffer(make([]byte,0))
 
 	ipv4 := addr.IP.To4()
 	if ipv4 != nil {
@@ -206,10 +200,6 @@ func (bind *nativeBind) ReceiveIPv6(buff []byte) (int, Endpoint, error) {
 	if bind.sock6 == -1 {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
-	// Segments buffers
-	end.buffs = buffersWithCap(gsoSegments)
-	end.buff = bytes.NewBuffer(make([]byte,0))
-
 	n, err := receive6(
 		bind.sock6,
 		buff,
@@ -223,10 +213,6 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 	if bind.sock4 == -1 {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
-	// Segments buffers
-	end.buffs = buffersWithCap(gsoSegments)
-	end.buff = bytes.NewBuffer(make([]byte,0))
-
 	n, err := receive4(
 		bind.sock4,
 		buff,
@@ -248,47 +234,6 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 		}
 		return send6(bind.sock6, nend, buff)
 	}
-}
-
-func (bind *nativeBind) SendBuffered(buff []byte, end Endpoint) error {
-	nend := end.(*NativeEndpoint)
-
-	_, err := nend.buffs.Write(buff)
-	if err != nil {
-		return err
-	}
-
-	if nend.buffs.Len() >= gsoSegments {
-		return bind.Flush(end)
-	}
-
-	return nil
-}
-
-func (bind *nativeBind) Flush(end Endpoint) error {
-	nend := end.(*NativeEndpoint)
-	defer nend.buffs.Reset()
-
-	if nend.buffs.Len() == 1 {
-		return bind.Send(nend.buffs.Bytes(0), end)
-	}
-
-	for i := 0; i < nend.buffs.Len(); i++ {
-		n, err := nend.buff.Write(nend.buffs.Bytes(i))
-		if err != nil {
-			return err
-		}
-
-		if n < gsoSegmentSize || i == nend.buffs.Len()-1 {
-			err := bind.Send(nend.buff.Bytes(), end)
-			if err != nil {
-				return err
-			}
-			nend.buff.Reset()
-		}
-	}
-
-	return nil
 }
 
 func (end *NativeEndpoint) SrcIP() net.IP {
@@ -402,11 +347,12 @@ func create4(port uint16) (int, uint16, error) {
 			return err
 		}
 
+
 		if err := unix.SetsockoptInt(
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_SNDBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -415,7 +361,7 @@ func create4(port uint16) (int, uint16, error) {
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_RCVBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -435,6 +381,7 @@ func create4(port uint16) (int, uint16, error) {
 }
 
 func create6(port uint16) (int, uint16, error) {
+
 	// create socket
 
 	fd, err := unix.Socket(
@@ -486,7 +433,7 @@ func create6(port uint16) (int, uint16, error) {
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_SNDBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -495,7 +442,7 @@ func create6(port uint16) (int, uint16, error) {
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_RCVBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -516,7 +463,9 @@ func create6(port uint16) (int, uint16, error) {
 }
 
 func send4(sock int, end *NativeEndpoint, buff []byte) error {
+
 	// construct message header
+
 	cmsg := struct {
 		cmsghdr unix.Cmsghdr
 		pktinfo unix.Inet4Pktinfo
@@ -531,22 +480,9 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 			Ifindex:  end.src4().Ifindex,
 		},
 	}
-	cmsggso := struct {
-		cmsghdr     unix.Cmsghdr
-		segmentSize uint16
-	}{
-		unix.Cmsghdr{
-			Level: unix.IPPROTO_UDP,
-			Type:  0x67,
-			Len:   2 + unix.SizeofCmsghdr,
-		},
-		uint16(gsoSegmentSize),
-	}
 
 	end.Lock()
-	_, err := unix.SendmsgN(sock, buff,
-		append((*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], (*[unsafe.Sizeof(cmsggso)]byte)(unsafe.Pointer(&cmsggso))[:]...),
-		end.dst4(), 0)
+	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 	end.Unlock()
 
 	if err == nil {
@@ -554,13 +490,12 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 	}
 
 	// clear src and retry
+
 	if err == unix.EINVAL {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet4Pktinfo{}
 		end.Lock()
-		_, err = unix.SendmsgN(sock, buff,
-			append((*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], (*[unsafe.Sizeof(cmsggso)]byte)(unsafe.Pointer(&cmsggso))[:]...),
-			end.dst4(), 0)
+		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 		end.Unlock()
 	}
 
@@ -568,6 +503,7 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 }
 
 func send6(sock int, end *NativeEndpoint, buff []byte) error {
+
 	// construct message header
 
 	cmsg := struct {
@@ -598,6 +534,7 @@ func send6(sock int, end *NativeEndpoint, buff []byte) error {
 	}
 
 	// clear src and retry
+
 	if err == unix.EINVAL {
 		end.ClearSrc()
 		cmsg.pktinfo = unix.Inet6Pktinfo{}

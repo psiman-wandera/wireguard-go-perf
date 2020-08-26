@@ -20,6 +20,7 @@ import (
 
 const (
 	FD_ERR = -1
+	buffSize = 2 * 1024 * 1024
 )
 
 type IPv4Source struct {
@@ -344,11 +345,12 @@ func create4(port uint16) (int, uint16, error) {
 			return err
 		}
 
+
 		if err := unix.SetsockoptInt(
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_SNDBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -357,7 +359,7 @@ func create4(port uint16) (int, uint16, error) {
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_RCVBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -429,7 +431,7 @@ func create6(port uint16) (int, uint16, error) {
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_SNDBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}
@@ -438,7 +440,7 @@ func create6(port uint16) (int, uint16, error) {
 			fd,
 			unix.SOL_SOCKET,
 			unix.SO_RCVBUFFORCE,
-			16*1024*1024,
+			buffSize,
 		); err != nil {
 			return err
 		}

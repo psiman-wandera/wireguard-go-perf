@@ -530,6 +530,8 @@ func (device *Device) BindUpdate() error {
 		device.net.starting.Add(2)
 		device.net.stopping.Add(2)
 		go device.RoutineReceiveIncoming(ipv4.Version, netc.bind)
+		go device.RoutineReceiveIncoming(ipv4.Version, netc.bind)
+		go device.RoutineReceiveIncoming(ipv6.Version, netc.bind)
 		go device.RoutineReceiveIncoming(ipv6.Version, netc.bind)
 		device.net.starting.Wait()
 

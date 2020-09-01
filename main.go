@@ -9,6 +9,8 @@ package main
 
 import (
 	"fmt"
+	"golang.zx2c4.com/wireguard/internal/server"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -248,6 +250,14 @@ func main() {
 	}()
 
 	logger.Info.Println("UAPI listener started")
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error.Println("Failed to start admin server on port 8079.", err)
+		}
+	}()
+
+	logger.Info.Println("Started admin server on port 8079")
 
 	// wait for program to terminate
 

@@ -527,8 +527,8 @@ func (device *Device) BindUpdate() error {
 
 		// start receiving routines
 
-		device.net.starting.Add(2)
-		device.net.stopping.Add(2)
+		device.net.starting.Add(4)
+		device.net.stopping.Add(4)
 		go device.RoutineReceiveIncoming(ipv4.Version, netc.bind)
 		go device.RoutineReceiveIncoming(ipv4.Version, netc.bind)
 		go device.RoutineReceiveIncoming(ipv6.Version, netc.bind)

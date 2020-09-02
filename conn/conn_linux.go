@@ -9,12 +9,16 @@ package conn
 
 import (
 	"errors"
+	"fmt"
 	"net"
+	"os"
+	"reflect"
 	"strconv"
 	"sync"
 	"syscall"
 	"unsafe"
 
+	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
 )
 
@@ -63,6 +67,7 @@ type nativeBind struct {
 	sock4    int
 	sock6    int
 	lastMark uint32
+	c        chan receiveResp
 }
 
 var _ Endpoint = (*NativeEndpoint)(nil)
@@ -192,17 +197,63 @@ func (bind *nativeBind) Close() error {
 	return err2
 }
 
+const (
+	maxSegmentSize = (1 << 16) - 1
+)
+
+type receiveResp struct {
+	size int
+	buff *[maxSegmentSize]byte
+	end  Endpoint
+	err  error
+}
+
+// TODO: receive multiple https://github.com/golang/net/blob/312bce6e941fc7e152b630a8643ea239afc12ddd/internal/socket/socket.go#L274
+func (bind *nativeBind) receiveIPv6() {
+	for {
+		fmt.Println("receiveIPv6********")
+		fv := reflect.ValueOf(bind).Elem().FieldByName("sock6")
+		c, _ := net.FileConn(os.NewFile(uintptr(fv.Int()), "wg-socket"))
+		udpC, _ := c.(*net.UDPConn)
+		bb := make([]byte, maxSegmentSize)
+		cf := ipv6.FlagHopLimit | ipv6.FlagInterface
+		rms := []ipv6.Message{
+			{
+				Buffers: [][]byte{bb},
+				OOB:     ipv6.NewControlMessage(cf),
+			},
+		}
+		n, _ := ipv6.NewPacketConn(udpC).ReadBatch(rms, 0)
+		for i:=0; i <= n; i++ {
+			buff := new([maxSegmentSize]byte)
+			copy(buff[:], rms[i].Buffers[0][:])
+			var end NativeEndpoint
+			end.isV6 = true
+			bind.c <- receiveResp{
+				size: n,
+				buff: buff,
+				end:  &end,
+				err:  nil,
+			}
+		}
+	}
+}
+
 func (bind *nativeBind) ReceiveIPv6(buff []byte) (int, Endpoint, error) {
-	var end NativeEndpoint
 	if bind.sock6 == -1 {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
-	n, err := receive6(
-		bind.sock6,
-		buff,
-		&end,
-	)
-	return n, &end, err
+
+	if bind.c == nil {
+		bind.c = make(chan receiveResp, 100)
+		go bind.receiveIPv6()
+	}
+
+	r := <-bind.c
+
+	copy(buff[:r.size], r.buff[:])
+
+	return r.size, r.end, r.err
 }
 
 func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {

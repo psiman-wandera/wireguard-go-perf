@@ -210,7 +210,7 @@ func (bind *nativeBind) ReceiveIPv4(buff []byte) (int, Endpoint, error) {
 	if bind.sock4 == -1 {
 		return 0, nil, syscall.EAFNOSUPPORT
 	}
-	n, err := receive4(
+	n, err := receive4msgs(
 		bind.sock4,
 		buff,
 		&end,

@@ -25,7 +25,7 @@ func init() {
 	//ListenAndServe()
 	for i := 0; i < maxMessages; i++ {
 		var rBuff [unix.MaxSegmentSize]byte
-		rr := unix.ReceiveResp{P: rBuff[:]}
+		rr := unix.ReceiveResp{P: rBuff[:], Oob: (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]}
 		rrs[i] = &rr
 	}
 }
@@ -37,8 +37,9 @@ func ListenAndServe() error {
 
 func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 	if rrsIdx == rrsSize {
-		for i := 0; i < maxMessages; i++ {
-			rrs[i].Oob = (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]
+		for i := 0; i < rrsSize; i++ {
+			rrs[i].Oob = rrs[i].Oob[:0]
+			//rrs[i].Oob = (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]
 		}
 		size, err := unix.Recvmmsg(sock, rrs, unix.MSG_WAITFORONE)
 		//fmt.Printf("Number of packets: %d\n", size)

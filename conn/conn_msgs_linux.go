@@ -12,7 +12,7 @@ import (
 const maxMessages = 100
 const structSize = int(unsafe.Sizeof(cmsg{}))
 
-var rrs = make([]unix.ReceiveResp, maxMessages)
+var rrs = make([]*unix.ReceiveResp, maxMessages)
 var rrsSize = 0
 var rrsIdx = 0
 
@@ -26,7 +26,7 @@ func init() {
 	for i := 0; i < maxMessages; i++ {
 		var rBuff [unix.MaxSegmentSize]byte
 		rr := unix.ReceiveResp{P: rBuff[:]}
-		rrs[i] = rr
+		rrs[i] = &rr
 	}
 }
 
@@ -52,7 +52,7 @@ func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 	}
 
 	var r unix.ReceiveResp
-	r = rrs[rrsIdx]
+	r = *rrs[rrsIdx]
 	rrsIdx++
 
 	if r.Err != nil {

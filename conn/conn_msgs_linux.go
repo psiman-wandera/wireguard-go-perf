@@ -8,32 +8,29 @@ import (
 )
 
 const maxMessages = 100
+const structSize = int(unsafe.Sizeof(cmsg{}))
+
 var recvMessages = make([]*unix.ReceiveResp, 0, maxMessages)
+var rrs = make([]*unix.ReceiveResp, maxMessages)
 
 type cmsg struct {
 	cmsghdr unix.Cmsghdr
 	pktinfo unix.Inet4Pktinfo
 }
 
-const structSize = int(unsafe.Sizeof(cmsg{}))
-
-func (f *cmsg) BytesPtr() *[structSize]byte {
-	return (*[structSize]byte)(unsafe.Pointer(f))
-}
-
-func newCmsg(b *[structSize]byte) *cmsg {
-	return (*cmsg)(unsafe.Pointer(b))
+func init() {
+	for i := 0; i < maxMessages; i++ {
+		var rBuff [unix.MaxSegmentSize]byte
+		rr := unix.ReceiveResp{P: rBuff[:]}
+		//rr := unix.ReceiveResp{P: rBuff[:], Oob: (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]}
+		rrs[i] = &rr
+	}
 }
 
 func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
-
 	if len(recvMessages) == 0 {
-		rrs := make([]*unix.ReceiveResp, 0)
 		for i := 0; i < maxMessages; i++ {
-			cmsg := cmsg{}
-			var rBuff [unix.MaxSegmentSize]byte
-			rr := unix.ReceiveResp{Oob: cmsg.BytesPtr()[:], P: rBuff[:]}
-			rrs = append(rrs, &rr)
+			rrs[i].Oob = (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]
 		}
 		size, err := unix.Recvmmsg(sock, rrs, unix.MSG_WAITFORONE)
 		//fmt.Printf("Number of packets: %d\n", size)
@@ -64,7 +61,7 @@ func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 
 	var oob [structSize]byte
 	copy(oob[:], r.Oob)
-	cmsg := newCmsg(&oob)
+	cmsg := (*cmsg)(unsafe.Pointer(&oob))
 	if cmsg.cmsghdr.Level == unix.IPPROTO_IP &&
 		cmsg.cmsghdr.Type == unix.IP_PKTINFO &&
 		cmsg.cmsghdr.Len >= unix.SizeofInet4Pktinfo {

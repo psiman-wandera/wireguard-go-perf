@@ -1,33 +1,65 @@
 package conn
 
 import (
+	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
+var recvMessages = make([]unix.ReceiveResp, 0)
+
+type cmsg struct {
+	cmsghdr unix.Cmsghdr
+	pktinfo unix.Inet4Pktinfo
+}
+
+const structSize = int(unsafe.Sizeof(cmsg{}))
+
+func (f *cmsg) BytesPtr() *[structSize]byte {
+	return (*[structSize]byte)(unsafe.Pointer(f))
+}
+
+func newCmsg(b *[structSize]byte) *cmsg {
+	return (*cmsg)(unsafe.Pointer(b))
+}
+
 func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 
-	// construct message header
+	if len(recvMessages) == 0 {
+		cmsg := cmsg{}
+		var rBuff [unix.MaxSegmentSize]byte
+		rr := unix.ReceiveResp{Oob: cmsg.BytesPtr()[:], P: rBuff[:]}
+		size, err := unix.Recvmsgs3(sock, &rr, 0)
+		fmt.Printf("Size: %d, Err: ", size, err)
+		if err != nil {
+			fmt.Printf("Error: %v", err)
+			return 0, err
+		}
 
-	var cmsg struct {
-		cmsghdr unix.Cmsghdr
-		pktinfo unix.Inet4Pktinfo
+		for i := 0; i < size; i++ {
+			recvMessages = append(recvMessages, rr)
+		}
 	}
 
-	size, _, _, newDst, err := unix.Recvmsgs(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], unix.MSG_DONTWAIT)
+	var r unix.ReceiveResp
+	r, recvMessages = recvMessages[0], recvMessages[1:]
 
-	if err != nil {
-		return 0, err
+	if r.Err != nil {
+		fmt.Printf("Error: %v", r.Err)
+		return 0, r.Err
 	}
+	copy(buff[:r.Size], r.P[:])
+
 	end.isV6 = false
 
-	if newDst4, ok := newDst.(*unix.SockaddrInet4); ok {
+	if newDst4, ok := r.From.(*unix.SockaddrInet4); ok {
 		*end.dst4() = *newDst4
 	}
 
-	// update source cache
-
+	var oob [structSize]byte
+	copy(oob[:], r.Oob)
+	cmsg := newCmsg(&oob)
 	if cmsg.cmsghdr.Level == unix.IPPROTO_IP &&
 		cmsg.cmsghdr.Type == unix.IP_PKTINFO &&
 		cmsg.cmsghdr.Len >= unix.SizeofInet4Pktinfo {
@@ -35,5 +67,5 @@ func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 		end.src4().Ifindex = cmsg.pktinfo.Ifindex
 	}
 
-	return size, nil
+	return r.Size, r.Err
 }

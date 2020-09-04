@@ -2,6 +2,8 @@ package conn
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -10,8 +12,9 @@ import (
 const maxMessages = 100
 const structSize = int(unsafe.Sizeof(cmsg{}))
 
-var recvMessages = make([]*unix.ReceiveResp, 0, maxMessages)
-var rrs = make([]*unix.ReceiveResp, maxMessages)
+var rrs = make([]unix.ReceiveResp, maxMessages)
+var rrsSize = 0
+var rrsIdx = 0
 
 type cmsg struct {
 	cmsghdr unix.Cmsghdr
@@ -19,16 +22,21 @@ type cmsg struct {
 }
 
 func init() {
+	//ListenAndServe()
 	for i := 0; i < maxMessages; i++ {
 		var rBuff [unix.MaxSegmentSize]byte
 		rr := unix.ReceiveResp{P: rBuff[:]}
-		//rr := unix.ReceiveResp{P: rBuff[:], Oob: (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]}
-		rrs[i] = &rr
+		rrs[i] = rr
 	}
 }
 
+// ListenAndServe starts server based on provided configuration and registers request handlers.
+func ListenAndServe() error {
+	return http.ListenAndServe(fmt.Sprintf(":%d", 8079), nil)
+}
+
 func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
-	if len(recvMessages) == 0 {
+	if rrsIdx == rrsSize {
 		for i := 0; i < maxMessages; i++ {
 			rrs[i].Oob = (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]
 		}
@@ -39,13 +47,13 @@ func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 			return 0, err
 		}
 
-		for i := 0; i < size; i++ {
-			recvMessages = append(recvMessages, rrs[i])
-		}
+		rrsSize = size
+		rrsIdx = 0
 	}
 
-	var r *unix.ReceiveResp
-	r, recvMessages = recvMessages[0], recvMessages[1:]
+	var r unix.ReceiveResp
+	r = rrs[rrsIdx]
+	rrsIdx++
 
 	if r.Err != nil {
 		fmt.Printf("Error: %v", r.Err)
@@ -59,9 +67,7 @@ func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 		*end.dst4() = *newDst4
 	}
 
-	var oob [structSize]byte
-	copy(oob[:], r.Oob)
-	cmsg := (*cmsg)(unsafe.Pointer(&oob))
+	cmsg := (*cmsg)(unsafe.Pointer(&r.Oob))
 	if cmsg.cmsghdr.Level == unix.IPPROTO_IP &&
 		cmsg.cmsghdr.Type == unix.IP_PKTINFO &&
 		cmsg.cmsghdr.Len >= unix.SizeofInet4Pktinfo {

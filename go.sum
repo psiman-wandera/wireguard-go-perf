@@ -5,6 +5,8 @@ github.com/laura-zelenku/golang-sys v0.0.0-20200903095036-337f4faf4cfb h1:zg2reI
 github.com/laura-zelenku/golang-sys v0.0.0-20200903095036-337f4faf4cfb/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 github.com/laura-zelenku/golang-sys v0.0.0-20200903095638-367bcd8f200c h1:hmDZikG1wGbFt/r5/B//jvxQwATOpJhIF9xXF61X+WY=
 github.com/laura-zelenku/golang-sys v0.0.0-20200903095638-367bcd8f200c/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+github.com/laura-zelenku/golang-sys v0.0.0-20200904114144-ef876d63a20b h1:ybryjB8VF4vGd07kay7USMGf4MaeTT3Nfh6P5zJzhlY=
+github.com/laura-zelenku/golang-sys v0.0.0-20200904114144-ef876d63a20b/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79 h1:IaQbIIB2X/Mp/DKctl6ROxz1KyMlKp4uyvL6+kQ7C88=
 golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=

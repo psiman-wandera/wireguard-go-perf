@@ -7,7 +7,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var recvMessages = make([]unix.ReceiveResp, 0)
+const maxMessages = 100
+var recvMessages = make([]*unix.ReceiveResp, 0, maxMessages)
 
 type cmsg struct {
 	cmsghdr unix.Cmsghdr
@@ -27,22 +28,26 @@ func newCmsg(b *[structSize]byte) *cmsg {
 func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 
 	if len(recvMessages) == 0 {
-		cmsg := cmsg{}
-		var rBuff [unix.MaxSegmentSize]byte
-		rr := unix.ReceiveResp{Oob: cmsg.BytesPtr()[:], P: rBuff[:]}
-		size, err := unix.Recvmsgs3(sock, &rr, 0)
-		fmt.Printf("Size: %d, Err: ", size, err)
+		rrs := make([]*unix.ReceiveResp, 0)
+		for i := 0; i < maxMessages; i++ {
+			cmsg := cmsg{}
+			var rBuff [unix.MaxSegmentSize]byte
+			rr := unix.ReceiveResp{Oob: cmsg.BytesPtr()[:], P: rBuff[:]}
+			rrs = append(rrs, &rr)
+		}
+		size, err := unix.Recvmmsg(sock, rrs, unix.MSG_WAITFORONE)
+		//fmt.Printf("Number of packets: %d\n", size)
 		if err != nil {
 			fmt.Printf("Error: %v", err)
 			return 0, err
 		}
 
 		for i := 0; i < size; i++ {
-			recvMessages = append(recvMessages, rr)
+			recvMessages = append(recvMessages, rrs[i])
 		}
 	}
 
-	var r unix.ReceiveResp
+	var r *unix.ReceiveResp
 	r, recvMessages = recvMessages[0], recvMessages[1:]
 
 	if r.Err != nil {

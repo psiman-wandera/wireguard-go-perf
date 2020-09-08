@@ -14,7 +14,9 @@ import (
 const maxMessages = 200
 const maxTimeoutMs = 3
 const diffPerc = 0.3
+const maxSegmentSize = (1 << 16) - 1 // largest possible UDP datagram
 var currMessages = 100
+
 const structSize = int(unsafe.Sizeof(cmsg{}))
 
 var rrs = make([]*unix.ReceiveResp, maxMessages)
@@ -29,7 +31,7 @@ type cmsg struct {
 func init() {
 	//ListenAndServe()
 	for i := 0; i < maxMessages; i++ {
-		var rBuff [unix.MaxSegmentSize]byte
+		var rBuff [maxSegmentSize]byte
 		rr := unix.ReceiveResp{P: rBuff[:], Oob: (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]}
 		rrs[i] = &rr
 	}

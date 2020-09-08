@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
+	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
-const maxMessages = 100
+const maxMessages = 200
+const maxTimeoutMs = 3
+const diffPerc = 0.3
+var currMessages = 100
 const structSize = int(unsafe.Sizeof(cmsg{}))
 
 var rrs = make([]*unix.ReceiveResp, maxMessages)
@@ -37,15 +42,34 @@ func ListenAndServe() error {
 
 func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 	if rrsIdx == rrsSize {
-		for i := 0; i < rrsSize; i++ {
-			rrs[i].Oob = rrs[i].Oob[:0]
-			//rrs[i].Oob = (*[structSize]byte)(unsafe.Pointer(&cmsg{}))[:]
+		var size int
+		for {
+			ts := unix.NsecToTimespec(maxTimeoutMs * time.Millisecond.Nanoseconds())
+			for i := 0; i < rrsSize; i++ {
+				rrs[i].Oob = rrs[i].Oob[:0]
+			}
+			var err error
+			size, err = unix.Recvmmsg(sock, rrs[:currMessages], unix.MSG_WAITALL, &ts)
+			if err != nil {
+				fmt.Printf("Error overall: %v\n", err)
+				if err == syscall.EAGAIN || err == syscall.Errno(512) {
+					continue
+				}
+				return 0, err
+			}
+			break
 		}
-		size, err := unix.Recvmmsg(sock, rrs, unix.MSG_WAITFORONE)
-		//fmt.Printf("Number of packets: %d\n", size)
-		if err != nil {
-			fmt.Printf("Error: %v", err)
-			return 0, err
+
+		if size < currMessages {
+			currMessages = int(float32(currMessages) * (1 - diffPerc))
+			if currMessages < 10 {
+				currMessages = 10
+			}
+		} else {
+			currMessages = int(float32(currMessages) * (1 + diffPerc))
+			if currMessages > maxMessages {
+				currMessages = maxMessages
+			}
 		}
 
 		rrsSize = size
@@ -57,7 +81,7 @@ func receive4msgs(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 	rrsIdx++
 
 	if r.Err != nil {
-		fmt.Printf("Error: %v", r.Err)
+		fmt.Printf("Error in: %v\n", r.Err)
 		return 0, r.Err
 	}
 	copy(buff[:r.Size], r.P[:])

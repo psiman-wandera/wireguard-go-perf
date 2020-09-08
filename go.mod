@@ -2,7 +2,8 @@ module golang.zx2c4.com/wireguard
 
 go 1.13
 
-replace golang.org/x/sys => github.com/laura-zelenku/golang-sys v0.0.0-20200904142124-aa939df018c6
+replace golang.org/x/sys => github.com/laura-zelenku/golang-sys v0.0.0-20200908141545-17aabb751333
+//replace golang.org/x/sys => /Users/mbasovnik/git/golang-sys
 
 require (
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
